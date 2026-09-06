@@ -1,0 +1,229 @@
+Yes—so far this is only the React frontend.
+It includes the map, UI, draggable pins, and Mumbai demo stop data. The “Optimize route” action only draws a preview line; it does not yet calculate a fastest route.
+Next, we’ll add:
+1. Frontend forms to add/edit/remove stops.
+2. Python backend with Google OR-Tools.
+3. OSRM integration for real driving times and road-following routes.
+
+
+Frontend is now:
+- React + Leaflet map UI
+- Mumbai demo map with draggable pins
+- Configurable delivery-stop count from 3–10
+- Hardcoded demo stop names, addresses, and coordinates
+- Route preview only—not real optimization yet
+
+
+
+
+
+The backend will consist of:
+1. Python API server
+   FastAPI endpoints that the React frontend can call.
+2. Stop-data validation
+   Checks the depot and 3–10 stop coordinates sent from the frontend.
+3. Reverse geocoding
+   Converts a dragged pin’s latitude/longitude into a readable Mumbai address.
+4. OSRM integration
+   Gets real driving time and distance between every pair of stops.
+5. Travel-time matrix builder
+   Converts OSRM results into the matrix format required by the solver.
+6. Google OR-Tools solver
+   Finds the fastest visit order for all stops, starting and ending at the depot.
+7. Road-route geometry
+   Requests OSRM’s actual road path for the optimized order, so Leaflet can draw it.
+8. API response formatter
+   Returns optimized stops, total distance, estimated duration, addresses, and route coordinates to React.
+9. Error handling and configuration
+   Handles unavailable map services, invalid locations, and environment settings such as API URLs.
+   
+   
+FLOW   
+React frontend → Uvicorn server → FastAPI endpoint → Python logic → JSON response
+
+**Nominatim** is a search and geocoding service built using OpenStreetMap data.
+
+It supports two main operations:
+
+- **Forward geocoding:** address → coordinates
+- **Reverse geocoding:** coordinates → readable address
+
+In our app, we use reverse geocoding:
+
+```text
+latitude + longitude
+        ↓
+Nominatim
+        ↓
+street address, city, state, postcode
+```
+
+Example:
+
+```http
+GET https://nominatim.openstreetmap.org/reverse?lat=19.0619&lon=72.8995&format=jsonv2
+```
+
+It returns information such as:
+
+```json
+{
+  "display_name": "Chembur East, Mumbai, Maharashtra, India",
+  "address": {
+    "suburb": "Chembur",
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "country": "India"
+  }
+}
+```
+
+It is separate from OSRM:
+
+- **Nominatim:** finds readable addresses
+- **OSRM:** finds driving routes and travel times
+- **OpenStreetMap tiles:** displays the map background
+
+
+
+
+Drag pin
+  -> React updates coordinates
+  -> React calls FastAPI reverse-geocoding endpoint (co-orderinates --> proper addresses)
+  
+  Request --> GET http://127.0.0.1:8000/geocode/reverse?latitude=19.0582&longitude=72.8961
+  
+  Response --> {
+  "place_id": 123456,
+  "lat": "19.0582",
+  "lon": "72.8961",
+  "display_name": "Chembur, Mumbai, Maharashtra, India",
+  "address": {
+    "suburb": "Chembur",
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "country": "India"
+  }
+}
+  
+  -> FastAPI calls Nominatim ((co-orderinates --> proper addresses))
+  -> Sidebar receives updated address
+
+Click Optimize route
+  -> React sends current stops to FastAPI
+  -> FastAPI validates the request
+  
+  -> FastAPI calls OSRM Table API (gives co-orderinates of each stops to the to get a matric of each stops representing time taken for each stop)
+  
+   url -->  POST http://127.0.0.1:8000/routes/optimize
+  REQUEST --> 
+  {
+  "depot": {
+    "id": "depot",
+    "name": "Main depot",
+    "type": "depot",
+    "address": "Chembur East, Mumbai",
+    "latitude": 19.0619,
+    "longitude": 72.8995
+  },
+  "stops": [
+    {
+      "id": "stop-1",
+      "name": "Stop 1",
+      "address": "Chembur, Mumbai, Maharashtra, India",
+      "latitude": 19.0582,
+      "longitude": 72.8961
+    },
+    {
+      "id": "stop-2",
+      "name": "Stop 2",
+      "address": "Chembur Naka, Mumbai",
+      "latitude": 19.0523,
+      "longitude": 72.9007
+    }
+  ]
+}
+  
+  RESPONSE ->
+
+{
+  "durations": [
+    [0, 420, 610],
+    [430, 0, 210],
+    [620, 220, 0]
+  ]
+}  
+  
+  -> Backend calculates stop order (written python code)
+  
+  Original:
+Depot -> Stop 1 -> Stop 2 -> Stop 3
+
+Calculated:
+Depot -> Stop 3 -> Stop 1 -> Stop 2
+  
+  -> FastAPI calls OSRM Route API   (to get proper other details such optimal distance and time)
+  
+ GET https://router.project-osrm.org/route/v1/driving/{ordered-coordinates}
+ GET https://router.project-osrm.org/route/v1/driving/72.8995,19.0619;72.9007,19.0523;72.8961,19.0582?overview=full&geometries=geojson
+  
+  
+  RESPONSE --> 
+  {
+  "code": "Ok",
+  "routes": [
+    {
+      "distance": 8200,
+      "duration": 1450,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [72.8995, 19.0619],
+          [72.8987, 19.0605],
+          [72.9007, 19.0523]
+        ]
+      }
+    }
+  ]
+}
+
+
+
+  -> OSRM returns road geometry
+  
+  -> FastAPI sends route response to React
+  
+  
+  -> React draws the optimized route
+  
+  
+  
+  
+  Final Backend response
+  
+  {
+  "ordered_stops": [
+    {
+      "id": "depot",
+      "name": "Main depot",
+      "type": "depot",
+      "address": "Chembur East, Mumbai",
+      "latitude": 19.0619,
+      "longitude": 72.8995
+    },
+    {
+      "id": "stop-2",
+      "name": "Stop 2",
+      "address": "Chembur Naka, Mumbai",
+      "latitude": 19.0523,
+      "longitude": 72.9007
+    }
+  ],
+  "geometry": [
+    [19.0619, 72.8995],
+    [19.0605, 72.8987],
+    [19.0523, 72.9007]
+  ],
+  "distance_meters": 8200,
+  "duration_seconds": 1450
+}
