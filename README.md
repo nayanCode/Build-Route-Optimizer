@@ -1,30 +1,120 @@
-# RouteWise frontend
+# RouteWise
 
-The first frontend milestone for a delivery-route optimizer. It displays a real
-OpenStreetMap base map, one depot, and ten draggable delivery-stop pins around
-Bengaluru.
+RouteWise is a map-based delivery route optimizer for planning practical driver
+routes. Move delivery stops on the map, update their addresses automatically,
+and let the backend return an optimized road route with distance and duration.
 
-## Run it
+The project is built as a React + Leaflet frontend backed by a FastAPI service.
+It uses OpenStreetMap tiles, Nominatim for reverse geocoding, and OSRM for
+road-aware routing data.
+
+## What it does
+
+- Displays a depot and delivery stops on an interactive map.
+- Supports draggable stop pins for quick location changes.
+- Accepts between 3 and 10 delivery stops per route.
+- Reverse-geocodes moved pins into readable addresses.
+- Validates stop data and duplicate IDs through the API.
+- Calculates an ordered route and draws the returned road geometry.
+- Shows route distance and estimated travel duration.
+
+## Tech stack
+
+| Area | Technology |
+| --- | --- |
+| Frontend | React, Vite, Leaflet, React Leaflet |
+| Backend | Python, FastAPI, Pydantic, Uvicorn |
+| Map data | OpenStreetMap |
+| Geocoding | Nominatim |
+| Routing | OSRM |
+
+## Quick start
+
+### 1. Start the backend
+
+Use Python 3.12 or newer:
 
 ```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+The API will be available at `http://127.0.0.1:8000`. Visit
+`http://127.0.0.1:8000/docs` for interactive API documentation.
+
+### 2. Start the frontend
+
+Open a second terminal in the project root:
+
+```powershell
+npm install
 npm run dev
 ```
 
-Then open the local address shown by Vite (normally `http://localhost:5173`).
+Open the local Vite address, normally `http://localhost:5173`.
 
-## Files in this milestone
+The frontend uses `http://127.0.0.1:8000` by default. To use another API
+address, set `VITE_API_BASE_URL` before starting Vite:
 
-- `package.json` — project scripts and React, Leaflet, and Vite dependencies.
-- `index.html` — the single HTML page Vite uses to mount the application.
-- `src/main.jsx` — starts React and imports the Leaflet and application styles.
-- `src/App.jsx` — page layout, map, draggable markers, route-preview state, and controls.
-- `src/data/stops.js` — initial depot and ten example deliveries.
-- `src/styles.css` — responsive visual design for the sidebar, controls, and map.
+```powershell
+$env:VITE_API_BASE_URL = "http://localhost:8000"
+npm run dev
+```
 
-## Current versus later behavior
+## API endpoints
 
-The **Optimize route** button sends the current depot and stops to the local
-FastAPI backend. The backend uses OSRM driving times to choose a road-aware stop
-order and returns the route geometry, distance, and estimated duration for the
-map preview. OR-Tools can be added later for more advanced constraints such as
-vehicle capacity and delivery time windows.
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Confirms that the API is running |
+| `POST` | `/routes/validate` | Validates a depot and 3-10 delivery stops |
+| `POST` | `/routes/optimize` | Returns ordered stops and road geometry |
+| `GET` | `/geocode/reverse` | Converts coordinates into an address |
+
+Example health response:
+
+```json
+{"status":"ok","service":"routewise-api"}
+```
+
+## Project structure
+
+```text
+.
+├── backend/
+│   ├── app/main.py                  # FastAPI routes and CORS configuration
+│   ├── app/schemas.py               # Request and response models
+│   └── app/services/
+│       ├── geocoding.py             # Nominatim reverse geocoding
+│       └── route_optimizer.py       # OSRM routing and route ordering
+├── src/
+│   ├── App.jsx                      # Main interface and map workflow
+│   ├── api/routeApi.js              # Frontend API client
+│   ├── data/stops.js                # Example route data
+│   └── styles.css                   # Application styles
+├── index.html
+├── package.json
+└── README.md
+```
+
+## External service notes
+
+This local demo uses public OpenStreetMap ecosystem services. Nominatim asks
+clients to identify themselves and limit requests to one per second. Public
+OSRM and Nominatim services are not intended to be treated as production
+infrastructure; use a managed or self-hosted provider for a deployed product.
+
+## Development commands
+
+```powershell
+npm run dev       # Start the frontend development server
+npm run build     # Create a production frontend build
+npm run preview   # Preview the production build locally
+```
+
+## License
+
+No license has been selected for this project yet. Until one is added, the
+repository should be treated as source-available rather than open source.
